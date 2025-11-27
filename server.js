@@ -6,20 +6,20 @@ const xml2js = require("xml2js");
 const app = express();
 app.use(cors());
 app.use(express.json());
+
 const parser = new xml2js.Parser({ explicitArray: false });
 
-/*
-=================================
- 1) BLAST 요청 보내기
-=================================
-*/
+// BLAST 요청 (Put)
 app.post("/blast", async (req, res) => {
   try {
-    const querySequence = req.body.query;
+    let querySequence = req.body.query;
 
-    if (!querySequence) {
+    if (!querySequence || querySequence.trim() === "") {
       return res.status(400).json({ error: "query is required" });
     }
+
+    // 줄바꿈 제거
+    querySequence = querySequence.replace(/\r?\n/g, " ");
 
     const params = new URLSearchParams();
     params.append("CMD", "Put");
@@ -29,45 +29,16 @@ app.post("/blast", async (req, res) => {
 
     const response = await axios.post(
       "https://blast.ncbi.nlm.nih.gov/Blast.cgi",
-      params
+      params.toString(),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
+
+    // NCBI가 XML 아닌 HTML 반환 시 에러
+    if (!response.data.includes("<BlastOutput>") && !response.data.includes("<RID>")) {
+      console.error("NCBI returned non-XML response:", response.data.substring(0, 300));
+      return res.status(500).send("NCBI returned non-XML response, check your query");
+    }
 
     res.send(response.data);
   } catch (err) {
-    console.error("BLAST PUT Error:", err);
-    res.status(500).send("BLAST Put Failed");
-  }
-});
-
-/*
-=================================
- 2) RID로 BLAST 진행 상태 확인/결과 가져오기
-=================================
-*/
-app.get("/blast/:rid", async (req, res) => {
-  const rid = req.params.rid;
-
-  try {
-    const response = await axios.get(
-      `https://blast.ncbi.nlm.nih.gov/Blast.cgi?CMD=Get&RID=${rid}&FORMAT_TYPE=XML`
-    );
-
-    res.send(response.data);
-  } catch (err) {
-    console.error("BLAST GET Error:", err);
-    res.status(500).send("BLAST Get Failed");
-  }
-});
-
-/*
-=================================
- Render Health Check
-=================================
-*/
-app.get("/", (req, res) => {
-  res.send("BLAST Proxy Server Running on Render");
-});
-
-/* ================================= */
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+    console.err
